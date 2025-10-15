@@ -68,3 +68,7 @@ htmlcov/
 
 # Database
 postgres_data/
+
+# Scripts with sensitive data
+backend/load_sample_data.py
+backend/create_superuser.py
