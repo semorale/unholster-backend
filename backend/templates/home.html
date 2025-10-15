@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+<div class="text-center">
+    <h1 class="text-4xl font-bold text-gray-900 mb-4">
+        Welcome to Unholster Library
+    </h1>
+    <p class="text-xl text-gray-600 mb-8">
+        Your digital library management system
+    </p>
+
+    {% if user.is_authenticated %}
+        <div class="bg-white rounded-lg shadow-md p-8 max-w-2xl mx-auto">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">
+                Hello, {{ user.full_name }}!
+            </h2>
+            <p class="text-gray-600 mb-6">
+                You are logged in as a {{ user.get_role_display }}.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <a href="{% url 'book_list' %}" class="bg-indigo-600 text-white px-6 py-3 rounded-md hover:bg-indigo-700 transition">
+                    Browse Books
+                </a>
+                {% if user.is_librarian %}
+                    <a href="{% url 'librarian_dashboard' %}" class="bg-green-600 text-white px-6 py-3 rounded-md hover:bg-green-700 transition">
+                        Librarian Dashboard
+                    </a>
+                {% else %}
+                    <a href="{% url 'my_loans' %}" class="bg-green-600 text-white px-6 py-3 rounded-md hover:bg-green-700 transition">
+                        My Loans
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    {% else %}
+        <div class="bg-white rounded-lg shadow-md p-8 max-w-2xl mx-auto">
+            <p class="text-gray-600 mb-6">
+                Please login or register to access the library system.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <a href="{% url 'login' %}" class="bg-indigo-600 text-white px-6 py-3 rounded-md hover:bg-indigo-700 transition">
+                    Login
+                </a>
+                <a href="{% url 'register' %}" class="bg-green-600 text-white px-6 py-3 rounded-md hover:bg-green-700 transition">
+                    Register
+                </a>
+            </div>
+        </div>
+    {% endif %}
+
+    <div class="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="text-indigo-600 text-4xl mb-2">📚</div>
+            <h3 class="text-lg font-semibold text-gray-800 mb-2">Browse Books</h3>
+            <p class="text-gray-600 text-sm">Search and discover books in our collection</p>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="text-indigo-600 text-4xl mb-2">🔖</div>
+            <h3 class="text-lg font-semibold text-gray-800 mb-2">Reserve Books</h3>
+            <p class="text-gray-600 text-sm">Reserve books for 1 hour before borrowing</p>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="text-indigo-600 text-4xl mb-2">📖</div>
+            <h3 class="text-lg font-semibold text-gray-800 mb-2">Borrow & Share</h3>
+            <p class="text-gray-600 text-sm">Borrow books for 2 days and share with others</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

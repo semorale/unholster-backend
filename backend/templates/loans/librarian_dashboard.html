@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+
+{% block title %}Librarian Dashboard{% endblock %}
+
+{% block content %}
+<div>
+    <h1 class="text-3xl font-bold text-gray-900 mb-6">Librarian Dashboard</h1>
+
+    <!-- Statistics Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="text-indigo-600 text-2xl mb-2">📚</div>
+            <h3 class="text-gray-600 text-sm font-medium">Total Books</h3>
+            <p class="text-3xl font-bold text-gray-900">{{ stats.total_books }}</p>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="text-green-600 text-2xl mb-2">✅</div>
+            <h3 class="text-gray-600 text-sm font-medium">Available Copies</h3>
+            <p class="text-3xl font-bold text-gray-900">{{ stats.available_copies }}</p>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="text-yellow-600 text-2xl mb-2">🔖</div>
+            <h3 class="text-gray-600 text-sm font-medium">Active Reservations</h3>
+            <p class="text-3xl font-bold text-gray-900">{{ stats.active_reservations }}</p>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="text-blue-600 text-2xl mb-2">📖</div>
+            <h3 class="text-gray-600 text-sm font-medium">Active Loans</h3>
+            <p class="text-3xl font-bold text-gray-900">{{ stats.active_loans }}</p>
+        </div>
+    </div>
+
+    <!-- Recent Loans -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Recent Loans</h2>
+        {% if recent_loans %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Book</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Borrowed</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due Date</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for loan in recent_loans %}
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-sm font-medium text-gray-900">{{ loan.book.title }}</div>
+                                    <div class="text-sm text-gray-500">{{ loan.book.author }}</div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {{ loan.user.full_name }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {{ loan.borrowed_at|date:"M d, Y" }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {{ loan.due_date|date:"M d, Y" }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {% if loan.is_overdue %}bg-red-100 text-red-800{% else %}bg-green-100 text-green-800{% endif %}">
+                                        {{ loan.get_status_display }}
+                                    </span>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-gray-500">No recent loans.</p>
+        {% endif %}
+    </div>
+
+    <!-- Recent Reservations -->
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Recent Reservations</h2>
+        {% if recent_reservations %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Book</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reserved</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expires</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for reservation in recent_reservations %}
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <div class="text-sm font-medium text-gray-900">{{ reservation.book.title }}</div>
+                                    <div class="text-sm text-gray-500">{{ reservation.book.author }}</div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {{ reservation.user.full_name }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {{ reservation.reserved_at|date:"M d, Y H:i" }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {{ reservation.expires_at|date:"M d, Y H:i" }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {% if reservation.is_expired %}bg-red-100 text-red-800{% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                                        {{ reservation.get_status_display }}
+                                    </span>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-gray-500">No recent reservations.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

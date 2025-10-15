@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+
+{% block title %}My Reservations{% endblock %}
+
+{% block content %}
+<div>
+    <h1 class="text-3xl font-bold text-gray-900 mb-6">My Active Reservations</h1>
+
+    {% if reservations %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {% for reservation in reservations %}
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h3 class="text-xl font-semibold text-gray-900">{{ reservation.book.title }}</h3>
+                            <p class="text-gray-600">by {{ reservation.book.author }}</p>
+                        </div>
+                        <span class="{% if reservation.is_expired %}bg-red-100 text-red-800{% else %}bg-yellow-100 text-yellow-800{% endif %} text-xs font-medium px-2.5 py-0.5 rounded">
+                            {{ reservation.get_status_display }}
+                        </span>
+                    </div>
+
+                    <div class="space-y-2 mb-4 text-sm">
+                        <p class="text-gray-700">
+                            <span class="font-medium">Reserved:</span> {{ reservation.reserved_at|date:"F d, Y H:i" }}
+                        </p>
+                        <p class="text-gray-700">
+                            <span class="font-medium">Expires:</span> {{ reservation.expires_at|date:"F d, Y H:i" }}
+                        </p>
+                        {% if not reservation.is_expired %}
+                            <p class="text-gray-700">
+                                <span class="font-medium">Time Remaining:</span> {{ reservation.remaining_time }}
+                            </p>
+                        {% else %}
+                            <p class="text-red-600 font-medium">
+                                This reservation has expired!
+                            </p>
+                        {% endif %}
+                    </div>
+
+                    <div class="flex gap-2">
+                        {% if not reservation.is_expired %}
+                            <form method="post" action="{% url 'reservation_convert' reservation.id %}" class="flex-1">
+                                {% csrf_token %}
+                                <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700 transition">
+                                    Convert to Loan
+                                </button>
+                            </form>
+                            <form method="post" action="{% url 'reservation_cancel' reservation.id %}" class="flex-1">
+                                {% csrf_token %}
+                                <button type="submit" class="w-full bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition">
+                                    Cancel
+                                </button>
+                            </form>
+                        {% else %}
+                            <div class="flex-1 bg-gray-100 text-gray-600 px-4 py-2 rounded text-center text-sm">
+                                Expired
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="bg-white rounded-lg shadow-md p-12 text-center">
+            <p class="text-gray-500 text-lg mb-4">You don't have any active reservations.</p>
+            <a href="{% url 'book_list' %}" class="inline-block bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700 transition">
+                Browse Books
+            </a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

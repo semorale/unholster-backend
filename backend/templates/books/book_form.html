@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if book %}Edit Book{% else %}Add Book{% endif %}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="mb-6">
+        <a href="{% if book %}{% url 'book_detail' book.id %}{% else %}{% url 'book_list' %}{% endif %}" class="text-indigo-600 hover:text-indigo-700">
+            ← Back
+        </a>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-md p-8">
+        <h1 class="text-2xl font-bold text-gray-900 mb-6">
+            {% if book %}Edit Book{% else %}Add New Book{% endif %}
+        </h1>
+
+        <form method="post" class="space-y-6">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="rounded-md bg-red-50 p-4">
+                    <p class="text-sm text-red-800">{{ form.non_field_errors }}</p>
+                </div>
+            {% endif %}
+
+            <div>
+                <label for="id_title" class="block text-sm font-medium text-gray-700">Title *</label>
+                <input type="text"
+                       name="title"
+                       id="id_title"
+                       value="{{ form.title.value|default:'' }}"
+                       required
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-4 py-2 border">
+                {% if form.title.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.title.errors }}</p>
+                {% endif %}
+            </div>
+
+            <div>
+                <label for="id_author" class="block text-sm font-medium text-gray-700">Author *</label>
+                <input type="text"
+                       name="author"
+                       id="id_author"
+                       value="{{ form.author.value|default:'' }}"
+                       required
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-4 py-2 border">
+                {% if form.author.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.author.errors }}</p>
+                {% endif %}
+            </div>
+
+            <div>
+                <label for="id_isbn" class="block text-sm font-medium text-gray-700">ISBN</label>
+                <input type="text"
+                       name="isbn"
+                       id="id_isbn"
+                       value="{{ form.isbn.value|default:'' }}"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-4 py-2 border">
+                {% if form.isbn.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.isbn.errors }}</p>
+                {% endif %}
+            </div>
+
+            <div>
+                <label for="id_description" class="block text-sm font-medium text-gray-700">Description</label>
+                <textarea name="description"
+                          id="id_description"
+                          rows="4"
+                          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-4 py-2 border">{{ form.description.value|default:'' }}</textarea>
+                {% if form.description.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.description.errors }}</p>
+                {% endif %}
+            </div>
+
+            <div>
+                <label for="id_quantity" class="block text-sm font-medium text-gray-700">Total Quantity *</label>
+                <input type="number"
+                       name="quantity"
+                       id="id_quantity"
+                       value="{{ form.quantity.value|default:'1' }}"
+                       min="1"
+                       required
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-4 py-2 border">
+                {% if form.quantity.errors %}
+                    <p class="mt-1 text-sm text-red-600">{{ form.quantity.errors }}</p>
+                {% endif %}
+            </div>
+
+            {% if book %}
+                <div>
+                    <label for="id_available_quantity" class="block text-sm font-medium text-gray-700">Available Quantity *</label>
+                    <input type="number"
+                           name="available_quantity"
+                           id="id_available_quantity"
+                           value="{{ form.available_quantity.value|default:'1' }}"
+                           min="0"
+                           required
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-4 py-2 border">
+                    {% if form.available_quantity.errors %}
+                        <p class="mt-1 text-sm text-red-600">{{ form.available_quantity.errors }}</p>
+                    {% endif %}
+                </div>
+            {% endif %}
+
+            <div class="flex gap-4">
+                <button type="submit" class="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition">
+                    {% if book %}Update Book{% else %}Add Book{% endif %}
+                </button>
+                <a href="{% if book %}{% url 'book_detail' book.id %}{% else %}{% url 'book_list' %}{% endif %}"
+                   class="flex-1 text-center bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400 transition">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,287 @@
+"""
+Serializers for the loans app.
+"""
+from datetime import timedelta
+
+from django.db import transaction
+from django.utils import timezone
+from rest_framework import serializers
+
+from apps.books.serializers import BookListSerializer
+
+from .models import Loan, LoanTransfer, Reservation
+
+
+class ReservationSerializer(serializers.ModelSerializer):
+    """Serializer for Reservation model."""
+
+    book_details = BookListSerializer(source='book', read_only=True)
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    is_expired = serializers.ReadOnlyField()
+    remaining_time = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Reservation
+        fields = [
+            'id', 'book', 'book_details', 'user', 'user_email',
+            'reserved_at', 'expires_at', 'status', 'is_expired',
+            'remaining_time', 'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'user', 'reserved_at', 'expires_at',
+            'created_at', 'updated_at'
+        ]
+
+    def validate_book(self, value):
+        """Validate that book is available for reservation."""
+        if not value.is_available:
+            raise serializers.ValidationError(
+                'This book is not available for reservation.'
+            )
+        return value
+
+    def validate(self, attrs):
+        """Validate reservation limits."""
+        user = self.context['request'].user
+
+        # Check max active reservations (3)
+        active_reservations = Reservation.objects.filter(
+            user=user,
+            status=Reservation.Status.ACTIVE
+        ).count()
+
+        if active_reservations >= 3:
+            raise serializers.ValidationError(
+                'You have reached the maximum number of active reservations (3).'
+            )
+
+        # Check if user already has an active reservation for this book
+        book = attrs.get('book')
+        if book and Reservation.objects.filter(
+            user=user,
+            book=book,
+            status=Reservation.Status.ACTIVE
+        ).exists():
+            raise serializers.ValidationError(
+                'You already have an active reservation for this book.'
+            )
+
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        """Create reservation and decrease book availability."""
+        validated_data['user'] = self.context['request'].user
+        validated_data['expires_at'] = timezone.now() + timedelta(hours=1)
+
+        # Decrease book availability
+        book = validated_data['book']
+        if book.available_quantity < 1:
+            raise serializers.ValidationError('Book is no longer available.')
+
+        book.available_quantity -= 1
+        book.save()
+
+        return super().create(validated_data)
+
+
+class LoanSerializer(serializers.ModelSerializer):
+    """Serializer for Loan model."""
+
+    book_details = BookListSerializer(source='book', read_only=True)
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    is_overdue = serializers.ReadOnlyField()
+    remaining_time = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Loan
+        fields = [
+            'id', 'book', 'book_details', 'user', 'user_email',
+            'reservation', 'borrowed_at', 'due_date', 'returned_at',
+            'status', 'is_overdue', 'remaining_time',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'user', 'borrowed_at', 'due_date', 'returned_at',
+            'created_at', 'updated_at'
+        ]
+
+    def validate_book(self, value):
+        """Validate that book is available for loan."""
+        # If converting from reservation, skip this check
+        if self.context.get('from_reservation'):
+            return value
+
+        if not value.is_available:
+            raise serializers.ValidationError(
+                'This book is not available for loan.'
+            )
+        return value
+
+    def validate(self, attrs):
+        """Validate loan limits."""
+        user = self.context['request'].user
+
+        # Skip validation if converting from reservation
+        if self.context.get('from_reservation'):
+            return attrs
+
+        # Check max active loans (5)
+        active_loans = Loan.objects.filter(
+            user=user,
+            status__in=[Loan.Status.ACTIVE, Loan.Status.OVERDUE]
+        ).count()
+
+        if active_loans >= 5:
+            raise serializers.ValidationError(
+                'You have reached the maximum number of active loans (5).'
+            )
+
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        """Create loan and decrease book availability if not from reservation."""
+        validated_data['user'] = self.context['request'].user
+        validated_data['due_date'] = timezone.now() + timedelta(days=2)
+
+        # Decrease book availability only if not from reservation
+        if not self.context.get('from_reservation'):
+            book = validated_data['book']
+            if book.available_quantity < 1:
+                raise serializers.ValidationError('Book is no longer available.')
+
+            book.available_quantity -= 1
+            book.save()
+
+        return super().create(validated_data)
+
+
+class LoanTransferSerializer(serializers.ModelSerializer):
+    """Serializer for LoanTransfer model."""
+
+    from_user_email = serializers.EmailField(source='from_user.email', read_only=True)
+    to_user_email = serializers.EmailField(source='to_user.email', read_only=True)
+    loan_details = LoanSerializer(source='loan', read_only=True)
+
+    class Meta:
+        model = LoanTransfer
+        fields = [
+            'id', 'loan', 'loan_details', 'from_user', 'from_user_email',
+            'to_user', 'to_user_email', 'transferred_at', 'accepted',
+            'created_at'
+        ]
+        read_only_fields = [
+            'id', 'from_user', 'transferred_at', 'created_at'
+        ]
+
+    def validate(self, attrs):
+        """Validate loan transfer."""
+        loan = attrs.get('loan')
+        to_user = attrs.get('to_user')
+        from_user = self.context['request'].user
+
+        # Validate that the loan belongs to the requesting user
+        if loan.user != from_user:
+            raise serializers.ValidationError(
+                'You can only transfer your own loans.'
+            )
+
+        # Validate that loan is active
+        if loan.status != Loan.Status.ACTIVE:
+            raise serializers.ValidationError(
+                'Only active loans can be transferred.'
+            )
+
+        # Validate that to_user is different from from_user
+        if to_user == from_user:
+            raise serializers.ValidationError(
+                'Cannot transfer loan to yourself.'
+            )
+
+        # Check if to_user has reached max loans (5)
+        active_loans = Loan.objects.filter(
+            user=to_user,
+            status__in=[Loan.Status.ACTIVE, Loan.Status.OVERDUE]
+        ).count()
+
+        if active_loans >= 5:
+            raise serializers.ValidationError(
+                'Target user has reached the maximum number of active loans (5).'
+            )
+
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        """Create loan transfer and update loan user."""
+        validated_data['from_user'] = self.context['request'].user
+
+        # Create the transfer record
+        transfer = super().create(validated_data)
+
+        # Update the loan's user
+        loan = validated_data['loan']
+        loan.user = validated_data['to_user']
+        loan.save()
+
+        return transfer
+
+
+class ConvertReservationToLoanSerializer(serializers.Serializer):
+    """Serializer for converting a reservation to a loan."""
+
+    reservation_id = serializers.IntegerField()
+
+    def validate_reservation_id(self, value):
+        """Validate that reservation exists and belongs to user."""
+        user = self.context['request'].user
+
+        try:
+            reservation = Reservation.objects.get(id=value, user=user)
+        except Reservation.DoesNotExist:
+            raise serializers.ValidationError('Reservation not found.')
+
+        if reservation.status != Reservation.Status.ACTIVE:
+            raise serializers.ValidationError('Reservation is not active.')
+
+        if reservation.is_expired:
+            raise serializers.ValidationError('Reservation has expired.')
+
+        return value
+
+    @transaction.atomic
+    def save(self):
+        """Convert reservation to loan."""
+        reservation = Reservation.objects.get(
+            id=self.validated_data['reservation_id']
+        )
+
+        # Check max active loans (5)
+        user = self.context['request'].user
+        active_loans = Loan.objects.filter(
+            user=user,
+            status__in=[Loan.Status.ACTIVE, Loan.Status.OVERDUE]
+        ).count()
+
+        if active_loans >= 5:
+            raise serializers.ValidationError(
+                'You have reached the maximum number of active loans (5).'
+            )
+
+        # Create loan from reservation
+        loan = Loan.objects.create(
+            book=reservation.book,
+            user=reservation.user,
+            reservation=reservation,
+            due_date=timezone.now() + timedelta(days=2)
+        )
+
+        # Mark reservation as converted
+        reservation.status = Reservation.Status.CONVERTED_TO_LOAN
+        reservation.save()
+
+        # Note: No need to adjust book availability as it was already
+        # decreased when the reservation was created
+
+        return loan

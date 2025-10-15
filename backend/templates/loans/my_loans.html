@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+
+{% block title %}My Loans{% endblock %}
+
+{% block content %}
+<div>
+    <h1 class="text-3xl font-bold text-gray-900 mb-6">My Active Loans</h1>
+
+    {% if loans %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {% for loan in loans %}
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h3 class="text-xl font-semibold text-gray-900">{{ loan.book.title }}</h3>
+                            <p class="text-gray-600">by {{ loan.book.author }}</p>
+                        </div>
+                        <span class="{% if loan.is_overdue %}bg-red-100 text-red-800{% else %}bg-green-100 text-green-800{% endif %} text-xs font-medium px-2.5 py-0.5 rounded">
+                            {{ loan.get_status_display }}
+                        </span>
+                    </div>
+
+                    <div class="space-y-2 mb-4 text-sm">
+                        <p class="text-gray-700">
+                            <span class="font-medium">Borrowed:</span> {{ loan.borrowed_at|date:"F d, Y H:i" }}
+                        </p>
+                        <p class="text-gray-700">
+                            <span class="font-medium">Due Date:</span> {{ loan.due_date|date:"F d, Y H:i" }}
+                        </p>
+                        {% if not loan.is_overdue %}
+                            <p class="text-gray-700">
+                                <span class="font-medium">Time Remaining:</span> {{ loan.remaining_time }}
+                            </p>
+                        {% else %}
+                            <p class="text-red-600 font-medium">
+                                This loan is overdue!
+                            </p>
+                        {% endif %}
+                    </div>
+
+                    <div class="flex gap-2">
+                        <form method="post" action="{% url 'loan_return' loan.id %}" class="flex-1">
+                            {% csrf_token %}
+                            <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700 transition">
+                                Return Book
+                            </button>
+                        </form>
+                        <a href="{% url 'loan_share' loan.id %}" class="flex-1 text-center bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition">
+                            Share Loan
+                        </a>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="bg-white rounded-lg shadow-md p-12 text-center">
+            <p class="text-gray-500 text-lg mb-4">You don't have any active loans.</p>
+            <a href="{% url 'book_list' %}" class="inline-block bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700 transition">
+                Browse Books
+            </a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
