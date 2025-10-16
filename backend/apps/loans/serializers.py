@@ -155,6 +155,17 @@ class LoanSerializer(serializers.ModelSerializer):
                 'You have reached the maximum number of active loans (5).'
             )
 
+        # Check if user already has an active loan for this book
+        book = attrs.get('book')
+        if book and Loan.objects.filter(
+            user=user,
+            book=book,
+            status__in=[Loan.Status.ACTIVE, Loan.Status.OVERDUE]
+        ).exists():
+            raise serializers.ValidationError(
+                'You already have an active loan for this book.'
+            )
+
         return attrs
 
     @transaction.atomic
@@ -301,6 +312,16 @@ class ConvertReservationToLoanSerializer(serializers.Serializer):
         if active_loans >= 5:
             raise serializers.ValidationError(
                 'You have reached the maximum number of active loans (5).'
+            )
+
+        # Check if user already has an active loan for this book
+        if Loan.objects.filter(
+            user=user,
+            book=reservation.book,
+            status__in=[Loan.Status.ACTIVE, Loan.Status.OVERDUE]
+        ).exists():
+            raise serializers.ValidationError(
+                'You already have an active loan for this book.'
             )
 
         # Create loan from reservation

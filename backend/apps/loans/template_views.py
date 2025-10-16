@@ -186,6 +186,15 @@ def reservation_convert(request, pk):
             messages.error(request, 'You have reached the maximum number of active loans (5).')
             return redirect('my_reservations')
 
+        # Check if user already has an active loan for this book
+        if Loan.objects.filter(
+            user=request.user,
+            book=reservation.book,
+            status__in=[Loan.Status.ACTIVE, Loan.Status.OVERDUE]
+        ).exists():
+            messages.error(request, 'You already have an active loan for this book.')
+            return redirect('my_reservations')
+
         try:
             # Create loan
             loan = Loan.objects.create(
@@ -229,6 +238,15 @@ def loan_create(request):
 
         if active_loans >= 5:
             messages.error(request, 'You have reached the maximum number of active loans (5).')
+            return redirect('book_detail', pk=book.id)
+
+        # Check if user already has an active loan for this book
+        if Loan.objects.filter(
+            user=request.user,
+            book=book,
+            status__in=[Loan.Status.ACTIVE, Loan.Status.OVERDUE]
+        ).exists():
+            messages.error(request, 'You already have an active loan for this book.')
             return redirect('book_detail', pk=book.id)
 
         # Create loan
