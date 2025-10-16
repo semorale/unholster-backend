@@ -2,6 +2,7 @@
 Views for the loans app.
 """
 from django.db import transaction
+from django_fsm import TransitionNotAllowed
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -64,22 +65,24 @@ class ReservationViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def destroy(self, request, *args, **kwargs):
-        """Cancel reservation and restore book availability."""
+        """Cancel reservation and restore book availability using FSM."""
         instance = self.get_object()
 
         if instance.status == Reservation.Status.ACTIVE:
-            # Restore book availability
-            instance.book.available_quantity += 1
-            instance.book.save()
+            try:
+                # Use FSM transition to cancel
+                instance.cancel()
+                instance.save()
 
-            # Mark reservation as cancelled
-            instance.status = Reservation.Status.CANCELLED
-            instance.save()
-
-            return Response(
-                {'detail': 'Reservation cancelled successfully.'},
-                status=status.HTTP_200_OK
-            )
+                return Response(
+                    {'detail': 'Reservation cancelled successfully.'},
+                    status=status.HTTP_200_OK
+                )
+            except TransitionNotAllowed:
+                return Response(
+                    {'detail': 'Cannot cancel this reservation.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         else:
             return Response(
                 {'detail': 'Only active reservations can be cancelled.'},
@@ -157,15 +160,23 @@ class LoanViewSet(viewsets.ModelViewSet):
     )
     @action(detail=True, methods=['post'])
     def return_book(self, request, pk=None):
-        """Endpoint to return a borrowed book."""
+        """Endpoint to return a borrowed book using FSM."""
         loan = self.get_object()
 
         if loan.status in [Loan.Status.ACTIVE, Loan.Status.OVERDUE]:
-            loan.return_book()
-            return Response(
-                LoanSerializer(loan).data,
-                status=status.HTTP_200_OK
-            )
+            try:
+                # Use FSM transition to return loan
+                loan.return_loan()
+                loan.save()
+                return Response(
+                    LoanSerializer(loan).data,
+                    status=status.HTTP_200_OK
+                )
+            except TransitionNotAllowed:
+                return Response(
+                    {'detail': 'Cannot return this loan.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         else:
             return Response(
                 {'detail': 'This loan has already been returned.'},
@@ -226,15 +237,16 @@ class LoanViewSet(viewsets.ModelViewSet):
 )
 class LoanTransferViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    ViewSet for viewing loan transfers.
-    Read-only as transfers are created through the loan share endpoint.
+    ViewSet for managing loan transfers with acceptance workflow.
+    Transfers are created through the loan share endpoint.
+    Acceptance, rejection, and cancellation are handled through custom actions.
     """
 
     serializer_class = LoanTransferSerializer
     permission_classes = [IsAuthenticated]
-    filterset_fields = ['loan', 'from_user', 'to_user', 'accepted']
-    ordering_fields = ['transferred_at']
-    ordering = ['-transferred_at']
+    filterset_fields = ['loan', 'from_user', 'to_user', 'status']
+    ordering_fields = ['created_at', 'responded_at']
+    ordering = ['-created_at']
 
     def get_queryset(self):
         """Return transfers based on user role."""
@@ -248,3 +260,142 @@ class LoanTransferViewSet(viewsets.ReadOnlyModelViewSet):
         ).filter(from_user=user) | LoanTransfer.objects.select_related(
             'loan', 'loan__book', 'from_user', 'to_user'
         ).filter(to_user=user)
+
+    @extend_schema(
+        summary='Get pending transfers',
+        description='Get all pending transfer requests received by the current user.',
+        responses={200: LoanTransferSerializer(many=True)},
+        tags=['Loan Transfers']
+    )
+    @action(detail=False, methods=['get'])
+    def pending(self, request):
+        """Endpoint to get all pending transfers for the current user."""
+        queryset = LoanTransfer.objects.filter(
+            to_user=request.user,
+            status=LoanTransfer.Status.PENDING
+        ).select_related('loan', 'loan__book', 'from_user')
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary='Accept transfer',
+        description='Accept a pending loan transfer. Loan ownership will be transferred.',
+        responses={200: LoanTransferSerializer},
+        tags=['Loan Transfers']
+    )
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def accept(self, request, pk=None):
+        """Endpoint for recipient to accept a loan transfer."""
+        transfer = self.get_object()
+
+        # Validate transfer belongs to current user (recipient)
+        if transfer.to_user != request.user:
+            return Response(
+                {'detail': 'You can only accept transfers sent to you.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Check if transfer is pending
+        if transfer.status != LoanTransfer.Status.PENDING:
+            return Response(
+                {'detail': f'Cannot accept transfer with status: {transfer.status}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Use FSM transition to accept
+            transfer.accept()
+            transfer.save()
+
+            return Response(
+                LoanTransferSerializer(transfer, context={'request': request}).data,
+                status=status.HTTP_200_OK
+            )
+        except TransitionNotAllowed:
+            return Response(
+                {'detail': 'Cannot accept this transfer. It may have expired.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @extend_schema(
+        summary='Reject transfer',
+        description='Reject a pending loan transfer. Loan stays with original owner.',
+        responses={200: LoanTransferSerializer},
+        tags=['Loan Transfers']
+    )
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def reject(self, request, pk=None):
+        """Endpoint for recipient to reject a loan transfer."""
+        transfer = self.get_object()
+
+        # Validate transfer belongs to current user (recipient)
+        if transfer.to_user != request.user:
+            return Response(
+                {'detail': 'You can only reject transfers sent to you.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Check if transfer is pending
+        if transfer.status != LoanTransfer.Status.PENDING:
+            return Response(
+                {'detail': f'Cannot reject transfer with status: {transfer.status}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Use FSM transition to reject
+            transfer.reject()
+            transfer.save()
+
+            return Response(
+                LoanTransferSerializer(transfer, context={'request': request}).data,
+                status=status.HTTP_200_OK
+            )
+        except TransitionNotAllowed:
+            return Response(
+                {'detail': 'Cannot reject this transfer. It may have expired.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @extend_schema(
+        summary='Cancel transfer',
+        description='Cancel a pending loan transfer (by sender). Loan stays with original owner.',
+        responses={200: LoanTransferSerializer},
+        tags=['Loan Transfers']
+    )
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def cancel(self, request, pk=None):
+        """Endpoint for sender to cancel a loan transfer."""
+        transfer = self.get_object()
+
+        # Validate transfer belongs to current user (sender)
+        if transfer.from_user != request.user:
+            return Response(
+                {'detail': 'You can only cancel transfers you initiated.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Check if transfer is pending
+        if transfer.status != LoanTransfer.Status.PENDING:
+            return Response(
+                {'detail': f'Cannot cancel transfer with status: {transfer.status}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Use FSM transition to cancel
+            transfer.cancel()
+            transfer.save()
+
+            return Response(
+                LoanTransferSerializer(transfer, context={'request': request}).data,
+                status=status.HTTP_200_OK
+            )
+        except TransitionNotAllowed:
+            return Response(
+                {'detail': 'Cannot cancel this transfer. It may have expired.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )

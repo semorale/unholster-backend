@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+
+{% block title %}Incoming Transfer Requests{% endblock %}
+
+{% block content %}
+<div>
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">Incoming Transfer Requests</h1>
+            <p class="text-gray-600 mt-2">These users want to share their loans with you. You have 24 hours to accept or reject.</p>
+        </div>
+        <a href="{% url 'my_transfers_sent' %}" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition text-sm whitespace-nowrap">
+            View Outgoing Transfers
+        </a>
+    </div>
+
+    {% if transfers %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {% for transfer in transfers %}
+                <div class="bg-white rounded-lg shadow-md p-6 {% if transfer.is_expired %}opacity-50{% endif %}">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h3 class="text-xl font-semibold text-gray-900">{{ transfer.loan.book.title }}</h3>
+                            <p class="text-gray-600">by {{ transfer.loan.book.author }}</p>
+                        </div>
+                        <span class="{% if transfer.is_expired %}bg-red-100 text-red-800{% else %}bg-yellow-100 text-yellow-800{% endif %} text-xs font-medium px-2.5 py-0.5 rounded">
+                            {% if transfer.is_expired %}EXPIRED{% else %}PENDING{% endif %}
+                        </span>
+                    </div>
+
+                    <div class="space-y-2 mb-4 text-sm">
+                        <p class="text-gray-700">
+                            <span class="font-medium">From:</span> {{ transfer.from_user.full_name }} ({{ transfer.from_user.email }})
+                        </p>
+                        <p class="text-gray-700">
+                            <span class="font-medium">Due Date:</span> {{ transfer.loan.due_date|date:"F d, Y H:i" }}
+                        </p>
+                        <p class="text-gray-700">
+                            <span class="font-medium">Sent:</span> {{ transfer.created_at|date:"F d, Y H:i" }}
+                        </p>
+                        <p class="text-gray-700">
+                            <span class="font-medium">Expires:</span> {{ transfer.expires_at|date:"F d, Y H:i" }}
+                        </p>
+                        {% if not transfer.is_expired %}
+                            <p class="text-yellow-700 font-medium">
+                                <span class="font-medium">Time Remaining:</span> {{ transfer.remaining_time }}
+                            </p>
+                        {% else %}
+                            <p class="text-red-600 font-medium">
+                                This transfer request has expired!
+                            </p>
+                        {% endif %}
+                    </div>
+
+                    {% if not transfer.is_expired %}
+                        <div class="flex gap-2">
+                            <form method="post" action="{% url 'transfer_accept' transfer.id %}" class="flex-1">
+                                {% csrf_token %}
+                                <button type="submit" class="w-full bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition">
+                                    Accept Transfer
+                                </button>
+                            </form>
+                            <form method="post" action="{% url 'transfer_reject' transfer.id %}" class="flex-1">
+                                {% csrf_token %}
+                                <button type="submit" class="w-full bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition">
+                                    Reject
+                                </button>
+                            </form>
+                        </div>
+                    {% else %}
+                        <button disabled class="w-full bg-gray-400 text-white px-4 py-2 rounded text-sm cursor-not-allowed">
+                            Expired
+                        </button>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="bg-white rounded-lg shadow-md p-12 text-center">
+            <p class="text-gray-500 text-lg mb-4">You don't have any incoming transfer requests.</p>
+            <div class="flex gap-3 justify-center">
+                <a href="{% url 'book_list' %}" class="inline-block bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700 transition">
+                    Browse Books
+                </a>
+                <a href="{% url 'my_transfers_sent' %}" class="inline-block bg-gray-600 text-white px-6 py-2 rounded-md hover:bg-gray-700 transition">
+                    View Outgoing Transfers
+                </a>
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

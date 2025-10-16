@@ -67,17 +67,25 @@ class LoanAdmin(admin.ModelAdmin):
 class LoanTransferAdmin(admin.ModelAdmin):
     """Admin configuration for LoanTransfer model."""
 
-    list_display = ['id', 'loan', 'from_user', 'to_user', 'transferred_at', 'accepted']
-    list_filter = ['accepted', 'transferred_at']
+    list_display = ['id', 'loan', 'from_user', 'to_user', 'status', 'created_at', 'responded_at']
+    list_filter = ['status', 'created_at']
     search_fields = ['loan__book__title', 'from_user__email', 'to_user__email']
-    readonly_fields = ['transferred_at', 'created_at']
-    ordering = ['-transferred_at']
+    readonly_fields = ['created_at', 'responded_at', 'updated_at', 'remaining_time']
+    ordering = ['-created_at']
 
     fieldsets = (
         (_('Transfer Details'), {
-            'fields': ('loan', 'from_user', 'to_user', 'accepted')
+            'fields': ('loan', 'from_user', 'to_user', 'status')
+        }),
+        (_('Timing'), {
+            'fields': ('created_at', 'expires_at', 'responded_at', 'remaining_time')
         }),
         (_('Metadata'), {
-            'fields': ('transferred_at', 'created_at')
+            'fields': ('updated_at',)
         }),
     )
+
+    def remaining_time(self, obj):
+        """Display remaining time in admin."""
+        return obj.remaining_time
+    remaining_time.short_description = _('Remaining Time')

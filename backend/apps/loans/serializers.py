@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from django.db import transaction
 from django.utils import timezone
+from django_fsm import TransitionNotAllowed
 from rest_framework import serializers
 
 from apps.books.serializers import BookListSerializer
@@ -92,6 +93,8 @@ class LoanSerializer(serializers.ModelSerializer):
     user_email = serializers.EmailField(source='user.email', read_only=True)
     is_overdue = serializers.ReadOnlyField()
     remaining_time = serializers.ReadOnlyField()
+    has_pending_transfer = serializers.ReadOnlyField()
+    pending_transfer = serializers.SerializerMethodField()
 
     class Meta:
         model = Loan
@@ -99,12 +102,27 @@ class LoanSerializer(serializers.ModelSerializer):
             'id', 'book', 'book_details', 'user', 'user_email',
             'reservation', 'borrowed_at', 'due_date', 'returned_at',
             'status', 'is_overdue', 'remaining_time',
+            'has_pending_transfer', 'pending_transfer',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
             'id', 'user', 'borrowed_at', 'due_date', 'returned_at',
             'created_at', 'updated_at'
         ]
+
+    def get_pending_transfer(self, obj):
+        """Get pending transfer details if exists."""
+        if obj.has_pending_transfer:
+            transfer = obj.pending_transfer
+            return {
+                'id': transfer.id,
+                'to_user_email': transfer.to_user.email,
+                'to_user_name': transfer.to_user.full_name,
+                'created_at': transfer.created_at,
+                'expires_at': transfer.expires_at,
+                'remaining_time': str(transfer.remaining_time)
+            }
+        return None
 
     def validate_book(self, value):
         """Validate that book is available for loan."""
@@ -158,25 +176,31 @@ class LoanSerializer(serializers.ModelSerializer):
 
 
 class LoanTransferSerializer(serializers.ModelSerializer):
-    """Serializer for LoanTransfer model."""
+    """Serializer for LoanTransfer model with pending acceptance workflow."""
 
     from_user_email = serializers.EmailField(source='from_user.email', read_only=True)
     to_user_email = serializers.EmailField(source='to_user.email', read_only=True)
+    from_user_name = serializers.CharField(source='from_user.full_name', read_only=True)
+    to_user_name = serializers.CharField(source='to_user.full_name', read_only=True)
     loan_details = LoanSerializer(source='loan', read_only=True)
+    is_expired = serializers.ReadOnlyField()
+    remaining_time = serializers.ReadOnlyField()
 
     class Meta:
         model = LoanTransfer
         fields = [
-            'id', 'loan', 'loan_details', 'from_user', 'from_user_email',
-            'to_user', 'to_user_email', 'transferred_at', 'accepted',
-            'created_at'
+            'id', 'loan', 'loan_details', 'from_user', 'from_user_email', 'from_user_name',
+            'to_user', 'to_user_email', 'to_user_name', 'status',
+            'created_at', 'expires_at', 'responded_at', 'updated_at',
+            'is_expired', 'remaining_time'
         ]
         read_only_fields = [
-            'id', 'from_user', 'transferred_at', 'created_at'
+            'id', 'from_user', 'status', 'created_at', 'expires_at',
+            'responded_at', 'updated_at'
         ]
 
     def validate(self, attrs):
-        """Validate loan transfer."""
+        """Validate loan transfer request."""
         loan = attrs.get('loan')
         to_user = attrs.get('to_user')
         from_user = self.context['request'].user
@@ -193,37 +217,47 @@ class LoanTransferSerializer(serializers.ModelSerializer):
                 'Only active loans can be transferred.'
             )
 
+        # Check if loan already has a pending transfer
+        if loan.has_pending_transfer:
+            raise serializers.ValidationError(
+                'This loan already has a pending transfer.'
+            )
+
         # Validate that to_user is different from from_user
         if to_user == from_user:
             raise serializers.ValidationError(
                 'Cannot transfer loan to yourself.'
             )
 
-        # Check if to_user has reached max loans (5)
+        # Check if to_user has reached max loans (5) including pending transfers
         active_loans = Loan.objects.filter(
             user=to_user,
             status__in=[Loan.Status.ACTIVE, Loan.Status.OVERDUE]
         ).count()
 
-        if active_loans >= 5:
+        pending_transfers = LoanTransfer.objects.filter(
+            to_user=to_user,
+            status=LoanTransfer.Status.PENDING
+        ).count()
+
+        if active_loans + pending_transfers >= 5:
             raise serializers.ValidationError(
-                'Target user has reached the maximum number of active loans (5).'
+                'Target user has reached the maximum number of active loans (5) including pending transfers.'
             )
 
         return attrs
 
     @transaction.atomic
     def create(self, validated_data):
-        """Create loan transfer and update loan user."""
+        """Create loan transfer request (PENDING status, not automatic)."""
         validated_data['from_user'] = self.context['request'].user
+        validated_data['expires_at'] = timezone.now() + timedelta(hours=24)
 
-        # Create the transfer record
+        # Create the transfer record with PENDING status (default)
         transfer = super().create(validated_data)
 
-        # Update the loan's user
-        loan = validated_data['loan']
-        loan.user = validated_data['to_user']
-        loan.save()
+        # DO NOT update the loan's user yet - wait for acceptance
+        # Loan stays with from_user until transfer is accepted
 
         return transfer
 
@@ -277,9 +311,14 @@ class ConvertReservationToLoanSerializer(serializers.Serializer):
             due_date=timezone.now() + timedelta(days=2)
         )
 
-        # Mark reservation as converted
-        reservation.status = Reservation.Status.CONVERTED_TO_LOAN
-        reservation.save()
+        # Mark reservation as converted using FSM transition
+        try:
+            reservation.convert_to_loan()
+            reservation.save()
+        except TransitionNotAllowed:
+            raise serializers.ValidationError(
+                'Cannot convert this reservation to a loan.'
+            )
 
         # Note: No need to adjust book availability as it was already
         # decreased when the reservation was created

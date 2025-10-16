@@ -4,7 +4,12 @@
 
 {% block content %}
 <div>
-    <h1 class="text-3xl font-bold text-gray-900 mb-6">My Active Loans</h1>
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-900">My Active Loans</h1>
+        <a href="{% url 'my_transfers_sent' %}" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition text-sm">
+            View Outgoing Transfers
+        </a>
+    </div>
 
     {% if loans %}
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -36,18 +41,41 @@
                                 This loan is overdue!
                             </p>
                         {% endif %}
+
+                        {% if loan.has_pending_transfer %}
+                            <div class="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                                <p class="text-yellow-800 font-medium text-xs">
+                                    ⏳ Transfer Pending
+                                </p>
+                                <p class="text-yellow-700 text-xs mt-1">
+                                    Waiting for {{ loan.pending_transfer.to_user.full_name }} to accept
+                                </p>
+                                <p class="text-yellow-600 text-xs">
+                                    Expires: {{ loan.pending_transfer.expires_at|date:"F d, Y H:i" }}
+                                </p>
+                            </div>
+                        {% endif %}
                     </div>
 
                     <div class="flex gap-2">
-                        <form method="post" action="{% url 'loan_return' loan.id %}" class="flex-1">
-                            {% csrf_token %}
-                            <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700 transition">
-                                Return Book
+                        {% if not loan.has_pending_transfer %}
+                            <form method="post" action="{% url 'loan_return' loan.id %}" class="flex-1">
+                                {% csrf_token %}
+                                <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700 transition">
+                                    Return Book
+                                </button>
+                            </form>
+                            <a href="{% url 'loan_share' loan.id %}" class="flex-1 text-center bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition">
+                                Share Loan
+                            </a>
+                        {% else %}
+                            <button disabled class="flex-1 text-center bg-gray-400 text-white px-4 py-2 rounded text-sm cursor-not-allowed" title="Cannot return while transfer is pending">
+                                Return Book (Disabled)
                             </button>
-                        </form>
-                        <a href="{% url 'loan_share' loan.id %}" class="flex-1 text-center bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition">
-                            Share Loan
-                        </a>
+                            <button disabled class="flex-1 text-center bg-gray-400 text-white px-4 py-2 rounded text-sm cursor-not-allowed">
+                                Transfer Pending
+                            </button>
+                        {% endif %}
                     </div>
                 </div>
             {% endfor %}

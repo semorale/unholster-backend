@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
+    'django_celery_beat',
 
     # Local apps
     'apps.accounts',
@@ -163,3 +164,17 @@ LOGOUT_REDIRECT_URL = '/'
 
 # CORS settings (will be configured per environment)
 CORS_ALLOW_CREDENTIALS = True
+
+# Redis Configuration
+REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+REDIS_SCHEDULER_DB = int(os.getenv('REDIS_SCHEDULER_DB', 1))  # Separate DB for scheduler
+
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'

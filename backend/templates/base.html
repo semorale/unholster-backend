@@ -41,6 +41,9 @@
                                 <a href="{% url 'my_loans' %}" class="text-white hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">
                                     My Loans
                                 </a>
+                                <a href="{% url 'pending_transfers' %}" class="text-white hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">
+                                    Incoming Transfers
+                                </a>
                                 {% if user.is_librarian %}
                                     <a href="{% url 'librarian_dashboard' %}" class="text-white hover:bg-indigo-500 px-3 py-2 rounded-md text-sm font-medium">
                                         Dashboard
@@ -94,6 +97,9 @@
                     </a>
                     <a href="{% url 'my_loans' %}" class="text-white hover:bg-indigo-500 block px-3 py-2 rounded-md text-base font-medium">
                         My Loans
+                    </a>
+                    <a href="{% url 'pending_transfers' %}" class="text-white hover:bg-indigo-500 block px-3 py-2 rounded-md text-base font-medium">
+                        Incoming Transfers
                     </a>
                     {% if user.is_librarian %}
                         <a href="{% url 'librarian_dashboard' %}" class="text-white hover:bg-indigo-500 block px-3 py-2 rounded-md text-base font-medium">

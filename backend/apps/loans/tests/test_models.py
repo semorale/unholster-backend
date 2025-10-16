@@ -39,11 +39,16 @@ class TestReservationModel:
         """Test remaining_time for expired reservation."""
         assert expired_reservation.remaining_time == timedelta(0)
 
-    def test_mark_as_expired(self, reservation):
-        """Test mark_as_expired method."""
+    def test_expire_fsm_transition(self, reservation):
+        """Test expire FSM transition."""
         initial_quantity = reservation.book.available_quantity
 
-        reservation.mark_as_expired()
+        # Set reservation to expired time to allow FSM transition
+        reservation.expires_at = timezone.now() - timedelta(minutes=1)
+        reservation.save()
+
+        reservation.expire()
+        reservation.save()
 
         assert reservation.status == Reservation.Status.EXPIRED
         reservation.book.refresh_from_db()
@@ -88,24 +93,26 @@ class TestLoanModel:
         assert remaining > timedelta(0)
         assert remaining <= timedelta(days=2)
 
-    def test_return_book(self, loan):
-        """Test return_book method."""
+    def test_return_loan_fsm_transition(self, loan):
+        """Test return_loan FSM transition."""
         initial_quantity = loan.book.available_quantity
 
-        loan.return_book()
+        loan.return_loan()
+        loan.save()
 
         assert loan.status == Loan.Status.RETURNED
         assert loan.returned_at is not None
         loan.book.refresh_from_db()
         assert loan.book.available_quantity == initial_quantity + 1
 
-    def test_mark_as_overdue(self, loan):
-        """Test mark_as_overdue method."""
-        # Manually set due date to past
+    def test_mark_overdue_fsm_transition(self, loan):
+        """Test mark_overdue FSM transition."""
+        # Manually set due date to past to allow FSM transition
         loan.due_date = timezone.now() - timedelta(days=1)
         loan.save()
 
-        loan.mark_as_overdue()
+        loan.mark_overdue()
+        loan.save()
 
         assert loan.status == Loan.Status.OVERDUE
 

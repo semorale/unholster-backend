@@ -11,6 +11,7 @@ from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.generic import ListView
+from django_fsm import TransitionNotAllowed
 
 from apps.books.models import Book
 
@@ -136,7 +137,7 @@ def reservation_create(request):
 @login_required
 @transaction.atomic
 def reservation_cancel(request, pk):
-    """Cancel an active reservation."""
+    """Cancel an active reservation using FSM."""
     reservation = get_object_or_404(
         Reservation,
         id=pk,
@@ -145,15 +146,14 @@ def reservation_cancel(request, pk):
     )
 
     if request.method == 'POST':
-        # Restore book availability
-        reservation.book.available_quantity += 1
-        reservation.book.save()
+        try:
+            # Use FSM transition to cancel
+            reservation.cancel()
+            reservation.save()
+            messages.success(request, 'Reservation cancelled successfully.')
+        except TransitionNotAllowed:
+            messages.error(request, 'Cannot cancel this reservation.')
 
-        # Mark reservation as cancelled
-        reservation.status = Reservation.Status.CANCELLED
-        reservation.save()
-
-        messages.success(request, 'Reservation cancelled successfully.')
         return redirect('my_reservations')
 
     return redirect('my_reservations')
@@ -162,7 +162,7 @@ def reservation_cancel(request, pk):
 @login_required
 @transaction.atomic
 def reservation_convert(request, pk):
-    """Convert a reservation to a loan."""
+    """Convert a reservation to a loan using FSM."""
     reservation = get_object_or_404(
         Reservation,
         id=pk,
@@ -186,20 +186,24 @@ def reservation_convert(request, pk):
             messages.error(request, 'You have reached the maximum number of active loans (5).')
             return redirect('my_reservations')
 
-        # Create loan
-        loan = Loan.objects.create(
-            book=reservation.book,
-            user=request.user,
-            reservation=reservation,
-            due_date=timezone.now() + timedelta(days=2)
-        )
+        try:
+            # Create loan
+            loan = Loan.objects.create(
+                book=reservation.book,
+                user=request.user,
+                reservation=reservation,
+                due_date=timezone.now() + timedelta(days=2)
+            )
 
-        # Mark reservation as converted
-        reservation.status = Reservation.Status.CONVERTED_TO_LOAN
-        reservation.save()
+            # Use FSM transition to convert reservation
+            reservation.convert_to_loan()
+            reservation.save()
 
-        messages.success(request, f'Successfully converted reservation to loan. Due date: {loan.due_date.strftime("%B %d, %Y %H:%M")}')
-        return redirect('my_loans')
+            messages.success(request, f'Successfully converted reservation to loan. Due date: {loan.due_date.strftime("%B %d, %Y %H:%M")}')
+            return redirect('my_loans')
+        except TransitionNotAllowed:
+            messages.error(request, 'Cannot convert this reservation.')
+            return redirect('my_reservations')
 
     return redirect('my_reservations')
 
@@ -247,7 +251,7 @@ def loan_create(request):
 @login_required
 @transaction.atomic
 def loan_return(request, pk):
-    """Return a borrowed book."""
+    """Return a borrowed book using FSM."""
     loan = get_object_or_404(
         Loan,
         id=pk,
@@ -256,8 +260,19 @@ def loan_return(request, pk):
     )
 
     if request.method == 'POST':
-        loan.return_book()
-        messages.success(request, f'Successfully returned "{loan.book.title}".')
+        # Check if loan has pending transfer
+        if loan.has_pending_transfer:
+            messages.error(request, 'Cannot return this loan while it has a pending transfer. Please cancel the transfer first.')
+            return redirect('my_loans')
+
+        try:
+            # Use FSM transition to return loan
+            loan.return_loan()
+            loan.save()
+            messages.success(request, f'Successfully returned "{loan.book.title}".')
+        except TransitionNotAllowed:
+            messages.error(request, 'Cannot return this loan.')
+
         return redirect('my_loans')
 
     return redirect('my_loans')
@@ -265,7 +280,7 @@ def loan_return(request, pk):
 
 @login_required
 def loan_share(request, pk):
-    """Share/transfer a loan to another user."""
+    """Share/transfer a loan to another user (creates PENDING transfer)."""
     loan = get_object_or_404(
         Loan,
         id=pk,
@@ -288,27 +303,36 @@ def loan_share(request, pk):
             messages.error(request, 'Cannot transfer loan to yourself.')
             return redirect('my_loans')
 
-        # Check if to_user has reached max loans
+        # Check if loan already has a pending transfer
+        if loan.has_pending_transfer:
+            messages.error(request, 'This loan already has a pending transfer.')
+            return redirect('my_loans')
+
+        # Check if to_user has reached max loans (including pending transfers)
         active_loans = Loan.objects.filter(
             user=to_user,
             status__in=[Loan.Status.ACTIVE, Loan.Status.OVERDUE]
         ).count()
 
-        if active_loans >= 5:
-            messages.error(request, 'Target user has reached the maximum number of active loans (5).')
+        pending_transfers = LoanTransfer.objects.filter(
+            to_user=to_user,
+            status=LoanTransfer.Status.PENDING
+        ).count()
+
+        if active_loans + pending_transfers >= 5:
+            messages.error(request, 'Target user has reached the maximum number of active loans (5) including pending transfers.')
             return redirect('my_loans')
 
-        # Create transfer and update loan
+        # Create PENDING transfer (DO NOT update loan ownership yet)
         with transaction.atomic():
             LoanTransfer.objects.create(
                 loan=loan,
                 from_user=request.user,
-                to_user=to_user
+                to_user=to_user,
+                expires_at=timezone.now() + timedelta(hours=24)
             )
-            loan.user = to_user
-            loan.save()
 
-        messages.success(request, f'Successfully shared loan with {to_user.full_name}.')
+        messages.success(request, f'Transfer request sent to {to_user.full_name}. They have 24 hours to accept.')
         return redirect('my_loans')
 
     # GET request - show user selection form
@@ -321,3 +345,115 @@ def loan_share(request, pk):
     }
 
     return render(request, 'loans/loan_share_form.html', context)
+
+
+class PendingTransfersView(LoginRequiredMixin, ListView):
+    """View for user's pending transfer requests (received)."""
+
+    model = LoanTransfer
+    template_name = 'loans/pending_transfers.html'
+    context_object_name = 'transfers'
+
+    def get_queryset(self):
+        """Get pending transfers for current user."""
+        return LoanTransfer.objects.filter(
+            to_user=self.request.user,
+            status=LoanTransfer.Status.PENDING
+        ).select_related('loan', 'loan__book', 'from_user').order_by('-created_at')
+
+
+class MyTransfersSentView(LoginRequiredMixin, ListView):
+    """View for user's sent transfer requests."""
+
+    model = LoanTransfer
+    template_name = 'loans/my_transfers_sent.html'
+    context_object_name = 'transfers'
+
+    def get_queryset(self):
+        """Get transfers sent by current user."""
+        return LoanTransfer.objects.filter(
+            from_user=self.request.user
+        ).select_related('loan', 'loan__book', 'to_user').order_by('-created_at')
+
+
+@login_required
+@transaction.atomic
+def transfer_accept(request, pk):
+    """Accept a pending loan transfer using FSM."""
+    transfer = get_object_or_404(
+        LoanTransfer,
+        id=pk,
+        to_user=request.user,
+        status=LoanTransfer.Status.PENDING
+    )
+
+    if request.method == 'POST':
+        # Validate transfer hasn't expired
+        if transfer.is_expired:
+            messages.error(request, 'This transfer request has expired.')
+            return redirect('pending_transfers')
+
+        try:
+            # Use FSM transition to accept
+            transfer.accept()
+            transfer.save()
+            messages.success(request, f'Successfully accepted loan transfer for "{transfer.loan.book.title}".')
+            return redirect('my_loans')
+        except TransitionNotAllowed:
+            messages.error(request, 'Cannot accept this transfer. It may have expired.')
+            return redirect('pending_transfers')
+        except Exception as e:
+            messages.error(request, f'Cannot accept this transfer: {str(e)}')
+            return redirect('pending_transfers')
+
+    return redirect('pending_transfers')
+
+
+@login_required
+@transaction.atomic
+def transfer_reject(request, pk):
+    """Reject a pending loan transfer using FSM."""
+    transfer = get_object_or_404(
+        LoanTransfer,
+        id=pk,
+        to_user=request.user,
+        status=LoanTransfer.Status.PENDING
+    )
+
+    if request.method == 'POST':
+        try:
+            # Use FSM transition to reject
+            transfer.reject()
+            transfer.save()
+            messages.success(request, 'Transfer request rejected.')
+            return redirect('pending_transfers')
+        except TransitionNotAllowed:
+            messages.error(request, 'Cannot reject this transfer.')
+            return redirect('pending_transfers')
+
+    return redirect('pending_transfers')
+
+
+@login_required
+@transaction.atomic
+def transfer_cancel(request, pk):
+    """Cancel a pending loan transfer (sender) using FSM."""
+    transfer = get_object_or_404(
+        LoanTransfer,
+        id=pk,
+        from_user=request.user,
+        status=LoanTransfer.Status.PENDING
+    )
+
+    if request.method == 'POST':
+        try:
+            # Use FSM transition to cancel
+            transfer.cancel()
+            transfer.save()
+            messages.success(request, 'Transfer request cancelled.')
+            return redirect('my_transfers_sent')
+        except TransitionNotAllowed:
+            messages.error(request, 'Cannot cancel this transfer.')
+            return redirect('my_transfers_sent')
+
+    return redirect('my_transfers_sent')

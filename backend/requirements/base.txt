@@ -24,3 +24,11 @@ pytz>=2024.1
 
 # WSGI server
 gunicorn>=21.2.0
+
+# Celery for async tasks
+celery>=5.3.0
+redis>=5.0.0
+django-celery-beat>=2.5.0
+
+# Finite State Machine
+django-fsm>=3.0.0

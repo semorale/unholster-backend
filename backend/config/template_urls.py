@@ -14,6 +14,8 @@ from apps.books.template_views import (
 from apps.loans.template_views import (
     MyLoansView,
     MyReservationsView,
+    MyTransfersSentView,
+    PendingTransfersView,
     librarian_dashboard,
     loan_create,
     loan_return,
@@ -21,6 +23,9 @@ from apps.loans.template_views import (
     reservation_cancel,
     reservation_convert,
     reservation_create,
+    transfer_accept,
+    transfer_cancel,
+    transfer_reject,
 )
 
 from .views import home
@@ -52,6 +57,13 @@ urlpatterns = [
     path('loans/create/', loan_create, name='loan_create'),
     path('loans/<int:pk>/return/', loan_return, name='loan_return'),
     path('loans/<int:pk>/share/', loan_share, name='loan_share'),
+
+    # Loan Transfers
+    path('transfers/pending/', PendingTransfersView.as_view(), name='pending_transfers'),
+    path('transfers/sent/', MyTransfersSentView.as_view(), name='my_transfers_sent'),
+    path('transfers/<int:pk>/accept/', transfer_accept, name='transfer_accept'),
+    path('transfers/<int:pk>/reject/', transfer_reject, name='transfer_reject'),
+    path('transfers/<int:pk>/cancel/', transfer_cancel, name='transfer_cancel'),
 
     # Librarian
     path('librarian/dashboard/', librarian_dashboard, name='librarian_dashboard'),
