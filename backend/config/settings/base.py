@@ -166,6 +166,7 @@ LOGOUT_REDIRECT_URL = '/'
 CORS_ALLOW_CREDENTIALS = True
 
 # Redis Configuration
+REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
 REDIS_SCHEDULER_DB = int(os.getenv('REDIS_SCHEDULER_DB', 1))  # Separate DB for scheduler

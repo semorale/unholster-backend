@@ -23,10 +23,9 @@ class LoanScheduler:
 
     def __init__(self):
         """Initialize Redis connection."""
-        self.redis = redis.Redis(
-            host=getattr(settings, 'REDIS_HOST', 'localhost'),
-            port=getattr(settings, 'REDIS_PORT', 6379),
-            db=getattr(settings, 'REDIS_SCHEDULER_DB', 1),
+        redis_url = getattr(settings, 'REDIS_URL', 'redis://localhost:6379/0')
+        self.redis = redis.from_url(
+            redis_url,
             decode_responses=True
         )
 
